@@ -1,0 +1,9 @@
+.tox/
+*.egg-info
+*.log
+*.pot
+*.pyc
+.idea
+__pycache__
+celerybeat-schedule
+templates

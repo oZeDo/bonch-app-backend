@@ -1,0 +1,143 @@
+# resources:
+# http://www.ameyalokare.com/docker/2017/09/20/nginx-flask-postgres-docker-compose.html
+# https://github.com/juggernaut/nginx-flask-postgres-docker-compose-example
+# https://serverfault.com/questions/783806/docker-how-to-django-uwsgi-gunicorn-nginx/787402
+# https://github.com/andrecp/django-tutorial-docker-nginx-postgres
+# https://github.com/realpython/dockerizing-django
+# http://ruddra.com/2016/08/14/docker-django-nginx-postgres/index.html
+# https://stackoverflow.com/questions/32180589/docker-how-to-expose-a-socket-over-a-port-for-a-django-application
+
+
+version: '3'
+
+services:
+
+  # database containers, one for each db
+  database1:
+    image: postgres:10
+    ports:
+      - "5432:5432"
+    volumes:
+      - database1_volume:/var/lib/postgresql/data
+    env_file:
+      - config/db/database1_env
+    networks:
+      - database1_network
+      - celery_network
+
+  # web container, with django + gunicorn
+  djangoapp:
+    build: .
+    environment:
+      - DJANGO_SETTINGS_MODULE
+    volumes:
+      - .:/opt/services/djangoapp/src
+      - static:/opt/services/djangoapp/static
+      - media:/opt/services/djangoapp/media
+    networks:
+      - database1_network
+      - nginx_network
+      - redis_network
+    depends_on:
+      - database1
+      - redis
+
+  # reverse proxy container (nginx)
+  nginx:
+    image: nginx:1.13
+    ports:
+      - "80:80"
+    volumes:
+      - ./config/nginx/conf.d:/etc/nginx/conf.d
+      - static:/opt/services/djangoapp/static
+      - media:/opt/services/djangoapp/media
+    networks:
+      - nginx_network
+    depends_on:
+      - djangoapp
+
+  # Redis
+  redis:
+    image: redis:alpine
+    command: ["redis-server", "/usr/local/etc/redis/redis.conf", "--appendonly", "yes"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - /opt/redis/data:/data
+      - ../wrapper3/config/redis/redis.conf:/usr/local/etc/redis/redis.conf
+    networks:
+      - redis_network
+      - celery_beat_network
+
+  # Celery worker
+  celery-high-priority:
+    build: .
+    command: bash -c "cd main/ && celery -A main worker -E -n worker.high --concurrency=4 -l info -Q high"
+    volumes:
+      - .:/opt/services/djangoapp/src
+    networks:
+      - redis_network
+      - celery_network
+    depends_on:
+      - database1
+      - redis
+      - djangoapp
+
+  celery-normal-priority:
+    build: .
+    command: bash -c "cd main/ && celery -A main worker -E -n worker.normal --concurrency=4 -l info -Q normal"
+    volumes:
+      - .:/opt/services/djangoapp/src
+    networks:
+      - redis_network
+      - celery_network
+    depends_on:
+      - database1
+      - redis
+      - djangoapp
+
+  celery-low-priority:
+    build: .
+    command: bash -c "cd main/ && celery -A main worker -E -n worker.low --concurrency=4 -l info -Q low"
+    volumes:
+      - .:/opt/services/djangoapp/src
+    networks:
+      - redis_network
+      - celery_network
+    depends_on:
+      - database1
+      - redis
+      - djangoapp
+
+
+  # Celery crontab
+  celery-beat:
+    build: .
+    command: bash -c "cd main/ && celery -A main beat -l info"
+    volumes:
+      - .:/opt/services/djangoapp/src
+    networks:
+      - celery_beat_network
+    depends_on:
+      - database1
+      - redis
+
+
+networks:
+  nginx_network:
+    driver: bridge
+  database1_network:
+    driver: bridge
+  celery_network:
+    driver: bridge
+  celery_beat_network:
+    driver: bridge
+  redis_network:
+    driver: bridge
+
+
+volumes:
+  database1_volume:
+  static:
+  media:
+  redis:

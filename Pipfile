@@ -1,0 +1,36 @@
+[[source]]
+url = "https://pypi.python.org/simple"
+verify_ssl = true
+name = "pypi"
+
+[packages]
+Django = "*"
+"psycopg2-binary" = "*"
+gunicorn = "*"
+djangorestframework = "*"
+markdown = "*"
+django-filter = "*"
+drf-yasg = "*"
+django-cors-headers = "*"
+django-extensions = "*"
+bs4 = "*"
+lxml = "*"
+pillow = "*"
+sentry-sdk = "*"
+django-debug-toolbar = "*"
+django-silk = "*"
+packaging = "*"
+importlib-metadata = "*"
+redis = "*"
+celery = "*"
+gevent = "*"
+scrapy = "*"
+scrapy-djangoitem = "*"
+fcm-django = "*"
+
+[dev-packages]
+tox = "*"
+ipython = "*"
+
+[requires]
+python_version = "3.6"
