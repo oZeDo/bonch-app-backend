@@ -27,10 +27,11 @@ gevent = "*"
 scrapy = "*"
 scrapy-djangoitem = "*"
 fcm-django = "*"
+djangorestframework-simplejwt = "*"
 
 [dev-packages]
 tox = "*"
 ipython = "*"
 
 [requires]
-python_version = "3.6"
+python_version = "3.8"
