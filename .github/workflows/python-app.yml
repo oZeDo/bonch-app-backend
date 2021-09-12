@@ -30,6 +30,7 @@ jobs:
         context: ./
         file: ./Dockerfile
         builder: ${{ steps.buildx.outputs.name }}
+        cache: enabled
         push: true
         pull: true
         tags:  ${{ secrets.DOCKER_HUB_USERNAME }}/bonch_app:latest
