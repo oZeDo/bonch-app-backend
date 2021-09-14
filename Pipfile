@@ -28,6 +28,8 @@ scrapy = "*"
 scrapy-djangoitem = "*"
 fcm-django = "*"
 djangorestframework-simplejwt = "*"
+typing-extensions = "*"
+httpx = "*"
 
 [dev-packages]
 tox = "*"
