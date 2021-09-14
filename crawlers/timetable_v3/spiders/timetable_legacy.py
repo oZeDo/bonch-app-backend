@@ -60,9 +60,13 @@ class TimetableSpider(scrapy.Spider):
             for pair in row.css("td[align] div.pair"):
                 for week in pair.css("small span.weeks::text").get()[1:-2].split(','):
                     data["subject"] = pair.css("span strong::text").get()
-                    data["subject_type"] = pair.css("small span.type::text").get()[1:-1]  # "(Лекция)" -> "Лекция"
                     data["tutor"] = pair.css("i span.teacher::text").get()
                     data["tutor_fullname"] = pair.css("i span.teacher::attr(title)").get()
                     data["place"] = pair.css("span.aud::text").get()
+                    if "*" in week:
+                        data["subject_type"] = "Видеолекция"
+                        week = week.replace("*", "")
+                    else:
+                        data["subject_type"] = pair.css("small span.type::text").get()[1:-1]  # "(Лекция)" -> "Лекция"
                     data["date"] = time_corrector(pair.css("::attr(weekday)").get(), week)
                     yield TimetableItem(**data)
