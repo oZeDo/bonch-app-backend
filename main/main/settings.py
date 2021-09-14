@@ -45,6 +45,7 @@ INSTALLED_APPS = [
     "fcm_django",
     'drf_yasg',
     'corsheaders',
+    'celery',
     #    'silk',
 
     # Django apps
