@@ -1,3 +1,6 @@
+import asyncio
+import httpx
+
 import requests
 from django.contrib.sites.shortcuts import get_current_site
 from django.template.loader import render_to_string
@@ -27,17 +30,6 @@ from django.shortcuts import render
 from django.conf import settings
 
 
-
-class AccountActivationTokenGenerator(PasswordResetTokenGenerator):
-    def make_hash_value(self, user, timestamp):
-        return (
-            six.text_type(user.pk) + six.text_type(timestamp) + six.text_type(user.signup.signup_confirmation)
-        )
-
-
-account_activation_token = AccountActivationTokenGenerator()
-
-
 class RegisterView(generics.CreateAPIView):
     queryset = User.objects.all()
     permission_classes = (AllowAny,)
@@ -54,28 +46,20 @@ def index(request):
     return render(request, 'index.html')
 
 
-def bonch_authorize(username, password):
+async def bonch_authorize(username, password):
     url = "https://lk.sut.ru/cabinet/"
     data = {
         "users": username,
         "parole": password,
     }
-    cookies = requests.get(url=url, headers=settings.HEADER).cookies
-    print(settings.HEADER)
-    print(cookies)
-    resp = requests.post(url="https://lk.sut.ru/cabinet/lib/autentificationok.php", data=data,
-                         cookies=cookies, headers=settings.HEADER)
-    # cookies = resp.cookies
-    resp = resp.content
-    print(resp)
-    if b'error' in resp:
-        return None
-    elif resp.decode() == "1":
-        cookies = cookies.get_dict()
-        requests.get(url="https://lk.sut.ru/cabinet/?login=yes", cookies=cookies, headers=settings.HEADER)
-        print(cookies)
-        return cookies
-    else:
+    async with httpx.AsyncClient() as client:
+        cookies = await client.get(url=url, headers=settings.HEADER).cookies
+        resp = await client.post(url="https://lk.sut.ru/cabinet/lib/autentificationok.php", data=data, cookies=cookies,
+                                 headers=settings.HEADER)
+        if resp.content.decode() == "1":
+            cookies = cookies.get_dict()
+            await client.get(url="https://lk.sut.ru/cabinet/?login=yes", cookies=cookies, headers=settings.HEADER)
+            return cookies
         return None
 
 
@@ -90,21 +74,18 @@ def login(request):
         return Response({'detail': 'Пожалуйста предоставьте username и password.'},
                         status=status.HTTP_400_BAD_REQUEST)
     username = username.lower()
-    bonch_valid = bonch_authorize(username, password)
-    print(bonch_valid)
-    if bonch_valid:
-
+    cookies = asyncio.run(bonch_authorize(username, password))
+    if cookies:
         try:
             user = User.objects.get(email=username)
         except ObjectDoesNotExist:
             user = User.objects.create(email=username)
-
-        user.set_password(password)
-        user.save()
+            user.set_password(password)
+            user.save()
 
         obj, _ = Cookie.objects.get_or_create(user=user)
-        obj.miden = bonch_valid["miden"]
-        obj.uid = bonch_valid["uid"]
+        obj.miden = cookies["miden"]
+        obj.uid = cookies["uid"]
         obj.save()
 
         account(user.id)
@@ -130,60 +111,67 @@ def login(request):
     return Response({'token': token.key},
                     status=status.HTTP_200_OK)
 
-
-@csrf_exempt
-def signup(request):
-    if request.method == 'POST':
-        form = UserCreationForm(request.POST, request.FILES)
-        if form.is_valid():
-            user = form.save()
-            user.refresh_from_db()
-            user.profile.description = form.cleaned_data.get('description')
-            user.profile.icon = form.cleaned_data.get("image")
-            user.is_active = False
-            user.save()
-            current_site = get_current_site(request)
-            subject = 'Please Activate Your Account'
-            # load a template like get_template()
-            # and calls its render() method immediately.
-            message = render_to_string('activation_request.html', {
-                'user': user,
-                'domain': current_site.domain,
-                'uid': urlsafe_base64_encode(force_bytes(user.pk)),
-                # method will generate a hash value with user related data
-                'token': account_activation_token.make_token(user),
-            })
-            user.email_user(subject, message)
-            return redirect('activation_sent')
-        else:
-            print(form.is_valid())
-    else:
-        form = UserCreationForm()
-    return render(request, 'signup.html', {'form': form})
-
-
-@csrf_exempt
-def activation_sent_view(request):
-    return render(request, 'activation_sent.html')
-
-
-@csrf_exempt
-def activate(request, uidb64, token):
-    try:
-        uid = force_text(urlsafe_base64_decode(uidb64))
-        user = User.objects.get(pk=uid)
-    except (TypeError, ValueError, OverflowError, User.DoesNotExist):
-        user = None
-    # checking if the user exists, if the token is valid.
-    if user is not None and account_activation_token.check_token(user, token):
-        # if valid set active true
-        user.is_active = True
-        # set signup_confirmation true
-        user.profile.signup_confirmation = True
-        user.save()
-        return redirect('admin_activation.html')
-    else:
-        return render('404.html')
+# class AccountActivationTokenGenerator(PasswordResetTokenGenerator):
+#     def make_hash_value(self, user, timestamp):
+#         return (
+#             six.text_type(user.pk) + six.text_type(timestamp) + six.text_type(user.signup.signup_confirmation)
+#         )
+#
+#
+# account_activation_token = AccountActivationTokenGenerator()
+# @csrf_exempt
+# def signup(request):
+#     if request.method == 'POST':
+#         form = UserCreationForm(request.POST, request.FILES)
+#         if form.is_valid():
+#             user = form.save()
+#             user.refresh_from_db()
+#             user.profile.description = form.cleaned_data.get('description')
+#             user.profile.icon = form.cleaned_data.get("image")
+#             user.is_active = False
+#             user.save()
+#             current_site = get_current_site(request)
+#             subject = 'Please Activate Your Account'
+#             # load a template like get_template()
+#             # and calls its render() method immediately.
+#             message = render_to_string('activation_request.html', {
+#                 'user': user,
+#                 'domain': current_site.domain,
+#                 'uid': urlsafe_base64_encode(force_bytes(user.pk)),
+#                 # method will generate a hash value with user related data
+#                 'token': account_activation_token.make_token(user),
+#             })
+#             user.email_user(subject, message)
+#             return redirect('activation_sent')
+#         else:
+#             print(form.is_valid())
+#     else:
+#         form = UserCreationForm()
+#     return render(request, 'signup.html', {'form': form})
+#
+#
+# @csrf_exempt
+# def activation_sent_view(request):
+#     return render(request, 'activation_sent.html')
+#
+#
+# @csrf_exempt
+# def activate(request, uidb64, token):
+#     try:
+#         uid = force_text(urlsafe_base64_decode(uidb64))
+#         user = User.objects.get(pk=uid)
+#     except (TypeError, ValueError, OverflowError, User.DoesNotExist):
+#         user = None
+#     # checking if the user exists, if the token is valid.
+#     if user is not None and account_activation_token.check_token(user, token):
+#         # if valid set active true
+#         user.is_active = True
+#         # set signup_confirmation true
+#         user.profile.signup_confirmation = True
+#         user.save()
+#         return redirect('admin_activation.html')
+#     else:
+#         return render('404.html')
 
 
 # class UserRegistrationView(CreateAPIView):
@@ -202,7 +190,6 @@ def activate(request, uidb64, token):
 #         }
 #
 #         return Response(response, status=status_code)
-
 
 
 # class UserLoginView(RetrieveAPIView):
