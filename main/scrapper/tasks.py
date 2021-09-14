@@ -1,13 +1,15 @@
 # Create your tasks here
+import asyncio
 from json.decoder import JSONDecodeError
 from django.core.exceptions import ObjectDoesNotExist
 from celery import shared_task
 import requests
+import httpx
 import datetime
 import re
 from bs4 import BeautifulSoup
 from core.models import Cookie
-from timetable.models import Tutor, Timetable, Group
+from timetable.models import Timetable, Group
 from scrapper.models import *
 from django.utils.timezone import make_aware
 from django.conf import settings
@@ -131,9 +133,9 @@ def account(user_id):
         "headman": False
     }
     try:
-        data["course"] = int(body[1].find_all("tr")[7].find("td").text)
-    except ValueError:
         data["course"] = int(body[1].find_all("tr")[8].find("td").text)
+    except ValueError:
+        data["course"] = int(body[1].find_all("tr")[9].find("td").text)
         data["headman"] = True
 
     obj, created = Account.objects.get_or_create(**data)
@@ -416,17 +418,26 @@ def files(user_id):
                 obj.save()
 
 
-@shared_task
-def update_cookie():
+async def update_cookie(cookies: dict) -> None:
     url = "https://lk.sut.ru/cabinet/lib/updatesession.php"
-    cookies = Cookie.objects.all()
-    for cookie in cookies:
-        cookie_data = {"uid": cookie.uid, "miden": cookie.miden}
-        requests.post(url=url, cookies=cookie_data, headers=settings.HEADER)
+    async with httpx.AsyncClient() as client:
+        await client.post(url=url, cookies=cookies, headers=settings.HEADER)
+
+
+async def update_cookies():
+    task_list = []
+    for cookie in Cookie.objects.all():
+        task_list.append(update_cookie(cookies={"uid": cookie.uid, "miden": cookie.miden}))
+    await asyncio.gather(*task_list)
+
+
+@shared_task
+def update_user_sessions():
+    asyncio.run(update_cookies())
 
 
 @shared_task()
-def parse_timetable():
+def parse_timetable_legacy():
     data = {}
     groups = []
     semester_date = []
